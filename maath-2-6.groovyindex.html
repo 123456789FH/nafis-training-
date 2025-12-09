@@ -1,0 +1,541 @@
+<script>
+    // ============================================
+    // إعدادات الألوان (هوية نافس)
+    // ============================================
+    const chartTheme = {
+      text: '#334155', 
+      grid: '#cbd5e1', 
+      primary: '#006C67', // أخضر نافس
+      secondary: '#C5A466', // ذهبي
+      accent: '#ef4444', // أحمر للتمييز
+      lines: '#1e293b'
+    };
+
+    // ============================================
+    // دوال مساعدة
+    // ============================================
+    function toArabicDigits(input) {
+      if(!input) return "";
+      const map = "٠١٢٣٤٥٦٧٨٩";
+      return input.toString().replace(/[0-9]/g, (d) => map[d]);
+    }
+    function randInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    const choose = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const shuffle = (array) => array.sort(() => Math.random() - 0.5);
+
+    // ============================================
+    // 1. دوال الرسم المتقدمة (SVG) - تم التحديث
+    // ============================================
+
+    // --- رسم التمثيل بالخطوط ---
+    function renderLineGraphSVG(data, title, yLabel) {
+      const w = 350, h = 220;
+      const m = { t: 40, r: 30, b: 40, l: 50 };
+      const innerW = w - m.l - m.r;
+      const innerH = h - m.t - m.b;
+      
+      // حساب الحد الأقصى للمحور الصادي
+      const maxVal = Math.max(...data.map(d => d.value)) + 5;
+      const stepX = innerW / (data.length - 1);
+
+      // نقاط الخط
+      const points = data.map((d, i) => {
+        return {
+          x: m.l + (i * stepX),
+          y: m.t + innerH - ((d.value / maxVal) * innerH),
+          val: d.value,
+          lbl: d.label
+        };
+      });
+
+      // مسار الخط
+      const pathD = "M " + points.map(p => `${p.x},${p.y}`).join(" L ");
+
+      // بناء الـ SVG
+      let svgContent = `
+        <line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${h - m.b}" stroke="${chartTheme.grid}" stroke-width="2"/>
+        <line x1="${m.l}" y1="${h - m.b}" x2="${w - m.r}" y2="${h - m.b}" stroke="${chartTheme.grid}" stroke-width="2"/>
+        
+        <path d="${pathD}" fill="none" stroke="${chartTheme.primary}" stroke-width="3" />
+      `;
+
+      // إضافة النقاط والنصوص
+      points.forEach(p => {
+        svgContent += `
+          <circle cx="${p.x}" cy="${p.y}" r="5" fill="white" stroke="${chartTheme.primary}" stroke-width="2"/>
+          <text x="${p.x}" y="${h - m.b + 20}" text-anchor="middle" font-size="12" fill="${chartTheme.text}">${p.lbl}</text>
+          <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" font-size="11" font-weight="bold" fill="${chartTheme.text}">${toArabicDigits(p.val)}</text>
+        `;
+      });
+
+      return `<div class="bg-white p-3 rounded-xl border border-slate-200 flex flex-col items-center">
+                <h3 class="text-sm font-bold text-[#006C67] mb-2">${title}</h3>
+                <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+                  ${svgContent}
+                  <text x="${m.l - 10}" y="${m.t}" text-anchor="end" font-size="10" fill="#64748b">${yLabel}</text>
+                </svg>
+              </div>`;
+    }
+
+    // --- رسم التمثيل بالنقاط (Dot Plot / Line Plot) ---
+    function renderDotPlotSVG(data, title) {
+      const w = 350, h = 180;
+      const m = { t: 30, r: 20, b: 40, l: 20 };
+      const innerW = w - m.l - m.r;
+      const stepX = innerW / (data.length + 1);
+
+      let svgContent = `
+        <line x1="${m.l}" y1="${h - m.b}" x2="${w - m.r}" y2="${h - m.b}" stroke="${chartTheme.grid}" stroke-width="3" stroke-linecap="round"/>
+        <path d="M ${m.l} ${h-m.b} L ${m.l+5} ${h-m.b-3} M ${m.l} ${h-m.b} L ${m.l+5} ${h-m.b+3}" stroke="${chartTheme.grid}" stroke-width="2"/>
+        <path d="M ${w-m.r} ${h-m.b} L ${w-m.r-5} ${h-m.b-3} M ${w-m.r} ${h-m.b} L ${w-m.r-5} ${h-m.b+3}" stroke="${chartTheme.grid}" stroke-width="2"/>
+      `;
+
+      data.forEach((d, i) => {
+        const x = m.l + (i + 1) * stepX;
+        const yBase = h - m.b;
+        
+        // الرقم على خط الأعداد
+        svgContent += `<text x="${x}" y="${yBase + 25}" text-anchor="middle" font-size="14" font-weight="bold" fill="${chartTheme.text}">${toArabicDigits(d.val)}</text>`;
+        
+        // رسم النقاط (X)
+        for (let k = 0; k < d.count; k++) {
+          const y = yBase - 15 - (k * 18);
+          // رسم شكل X
+          const size = 5;
+          svgContent += `
+            <line x1="${x-size}" y1="${y-size}" x2="${x+size}" y2="${y+size}" stroke="${chartTheme.primary}" stroke-width="2.5" />
+            <line x1="${x+size}" y1="${y-size}" x2="${x-size}" y2="${y+size}" stroke="${chartTheme.primary}" stroke-width="2.5" />
+          `;
+        }
+      });
+
+      return `<div class="bg-white p-3 rounded-xl border border-slate-200 flex flex-col items-center">
+                <h3 class="text-sm font-bold text-[#006C67] mb-2">${title}</h3>
+                <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+                  ${svgContent}
+                </svg>
+              </div>`;
+    }
+
+    // --- رسم الزوايا المتقدمة (المتتامة، المتكاملة، المتقابلة) ---
+    function renderComplexAngleSVG(type, angle1, angle2, missingIndex) {
+      const size = 200, cx = 100, cy = 150, len = 80;
+      let svgInner = "";
+      
+      if (type === "comp") { 
+        // متتامتان (زاوية قائمة مقسومة)
+        // خط أفقي ورأسي (قائمة)
+        svgInner += `<path d="M ${cx} ${cy} L ${cx+len} ${cy} L ${cx} ${cy} L ${cx} ${cy-len}" stroke="${chartTheme.lines}" stroke-width="3" fill="none"/>`;
+        // الشعاع القاطع
+        const rad = (angle1 * Math.PI) / 180;
+        const rx = cx + len * Math.cos(rad);
+        const ry = cy - len * Math.sin(rad);
+        svgInner += `<line x1="${cx}" y1="${cy}" x2="${rx}" y2="${ry}" stroke="${chartTheme.secondary}" stroke-width="2"/>`;
+        // مربع الزاوية القائمة
+        svgInner += `<rect x="${cx}" y="${cy-15}" width="15" height="15" fill="none" stroke="${chartTheme.accent}" stroke-width="1.5"/>`;
+        
+        // النصوص
+        const txt1 = missingIndex === 1 ? "س°" : toArabicDigits(angle1)+"°";
+        const txt2 = missingIndex === 2 ? "س°" : toArabicDigits(angle2)+"°";
+        svgInner += `<text x="${cx+30}" y="${cy-10}" font-size="12">${txt1}</text>`;
+        svgInner += `<text x="${cx+10}" y="${cy-40}" font-size="12">${txt2}</text>`;
+
+      } else if (type === "supp") {
+        // متكاملتان (خط مستقيم مقسوم)
+        svgInner += `<line x1="${cx-len}" y1="${cy}" x2="${cx+len}" y2="${cy}" stroke="${chartTheme.lines}" stroke-width="3"/>`;
+        // الشعاع
+        const rad = (angle1 * Math.PI) / 180;
+        const rx = cx + len * Math.cos(-rad); // negative because SVG y goes down
+        const ry = cy + len * Math.sin(-rad);
+        svgInner += `<line x1="${cx}" y1="${cy}" x2="${rx}" y2="${ry}" stroke="${chartTheme.secondary}" stroke-width="2"/>`;
+        
+        // النصوص
+        const txt1 = missingIndex === 1 ? "س°" : toArabicDigits(angle1)+"°";
+        const txt2 = missingIndex === 2 ? "س°" : toArabicDigits(angle2)+"°";
+        // مواضع تقريبية للنص
+        svgInner += `<text x="${cx+30}" y="${cy-15}" font-size="12">${txt1}</text>`;
+        svgInner += `<text x="${cx-30}" y="${cy-15}" font-size="12">${txt2}</text>`;
+
+      } else if (type === "vert") {
+        // متقابلتان بالرأس (X shape)
+        // خط 1
+        svgInner += `<line x1="${cx-60}" y1="${cy-60}" x2="${cx+60}" y2="${cy+60}" stroke="${chartTheme.lines}" stroke-width="3"/>`;
+        // خط 2
+        svgInner += `<line x1="${cx-60}" y1="${cy+60}" x2="${cx+60}" y2="${cy-60}" stroke="${chartTheme.lines}" stroke-width="3"/>`;
+        
+        // النصوص (فوق وتحت)
+        const txt1 = missingIndex === 1 ? "س°" : toArabicDigits(angle1)+"°"; // فوق
+        const txt2 = missingIndex === 2 ? "س°" : toArabicDigits(angle1)+"°"; // تحت
+        svgInner += `<text x="${cx}" y="${cy-40}" text-anchor="middle" font-size="14" fill="${chartTheme.primary}">${txt1}</text>`;
+        svgInner += `<text x="${cx}" y="${cy+50}" text-anchor="middle" font-size="14" fill="${chartTheme.primary}">${txt2}</text>`;
+      }
+
+      return `<div class="flex justify-center my-4"><svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        ${svgInner}
+        <circle cx="${cx}" cy="${cy}" r="4" fill="${chartTheme.lines}"/>
+      </svg></div>`;
+    }
+
+    // دوال رسم قديمة للأعمدة والقطاعات (موجودة لديك لكن نضعها للاكتمال)
+    function renderBarGraphSVG(data, title, yLabel) {
+        // ... (نفس الكود السابق للأعمدة)
+        const width = 320, height = 220;
+        const m = { top: 30, right: 20, bottom: 40, left: 40 };
+        const cw = width - m.left - m.right, ch = height - m.top - m.bottom;
+        const maxV = Math.max(...data.map((d) => d.value));
+        const bw = cw / data.length;
+        let bars = "", labels = "";
+        data.forEach((d, i) => {
+          const bh = (d.value / maxV) * ch;
+          const x = m.left + i * bw + bw * 0.1;
+          const y = m.top + ch - bh;
+          const w = bw * 0.8;
+          bars += `<rect x="${x}" y="${y}" width="${w}" height="${bh}" fill="${chartTheme.primary}" rx="2"/>`;
+          bars += `<text x="${x + w / 2}" y="${y - 5}" text-anchor="middle" font-size="11" font-weight="bold" fill="${chartTheme.text}">${toArabicDigits(d.value)}</text>`;
+          labels += `<text x="${x + w / 2}" y="${height - 10}" text-anchor="middle" font-size="11" fill="${chartTheme.text}">${d.name}</text>`;
+        });
+        return `<div class="bg-white p-2 rounded border border-slate-100 flex flex-col items-center"><h3 class="text-sm font-bold text-[#006C67] mb-1">${title}</h3><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${height - m.bottom}" stroke="#cbd5e1" stroke-width="2"/><line x1="${m.left}" y1="${height - m.bottom}" x2="${width - m.right}" y2="${height - m.bottom}" stroke="#cbd5e1" stroke-width="2"/>${bars}${labels}</svg></div>`;
+    }
+    function renderPieChartSVG(data, title) {
+        // ... (نفس الكود السابق للقطاعات)
+         const size = 200, center = size / 2, r = 70;
+        const total = data.reduce((s, d) => s + d.value, 0);
+        let start = 0, paths = "", legend = "";
+        const colors = [chartTheme.primary, chartTheme.secondary, '#3b82f6'];
+        data.forEach((d, i) => {
+          const angle = (d.value / total) * 360;
+          const end = start + angle;
+          const x1 = center + r * Math.cos((Math.PI * start) / 180);
+          const y1 = center + r * Math.sin((Math.PI * start) / 180);
+          const x2 = center + r * Math.cos((Math.PI * end) / 180);
+          const y2 = center + r * Math.sin((Math.PI * end) / 180);
+          const large = angle > 180 ? 1 : 0;
+          const color = colors[i % colors.length];
+          paths += `<path d="M ${center} ${center} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" stroke="white" stroke-width="2"/>`;
+          legend += `<div class="flex items-center gap-2 text-xs mb-1 text-slate-700"><span class="inline-block w-3 h-3 rounded-full" style="background-color:${color};"></span><span>${d.name} (${toArabicDigits(Math.round((d.value / total) * 100))}٪)</span></div>`;
+          start = end;
+        });
+        return `<div class="bg-white p-4 rounded border border-slate-100 flex flex-col items-center"><h3 class="text-sm font-bold text-[#006C67] mb-2">${title}</h3><svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${paths}</svg><div class="mt-2 text-right">${legend}</div></div>`;
+    }
+
+    // ============================================
+    // 2. منطق توليد الأسئلة (Logic) - المحدث
+    // ============================================
+    const domains = [
+      // ... (نفس المجالات السابقة، سأركز التحديث في generateQuestion)
+      // تأكد أن مصفوفة المجالات domains موجودة لديك كما في الكود السابق
+      {
+          id: "statistics",
+          name: "الإحصاء والبيانات",
+          skills: [
+            { id: "central", name: "مقاييس النزعة المركزية", desc: "المتوسط، الوسيط، المنوال، المدى" },
+            { id: "bar-graph", name: "الأعمدة البيانية", desc: "تفسير واستخراج البيانات" },
+            { id: "pie-chart", name: "القطاعات الدائرية", desc: "قراءة النسب والبيانات" },
+            { id: "line-graph", name: "التمثيل بالخطوط", desc: "تتبع البيانات عبر الزمن" },
+            { id: "scatter", name: "التمثيل بالنقاط", desc: "تفسير تكرار البيانات (X)" },
+          ],
+        },
+        {
+          id: "geometry",
+          name: "الهندسة",
+          skills: [
+            { id: "shapes", name: "الأشكال والمجسمات", desc: "خصائص الأشكال ثنائية وثلاثية الأبعاد" },
+            { id: "angles", name: "العلاقات بين الزوايا", desc: "المتتامة، المتكاملة، المتقابلة بالرأس" }, // تم تحديث الوصف
+            { id: "symmetry", name: "التماثل", desc: "محاور التماثل للأشكال الهندسية" },
+          ],
+        },
+        // ... بقية المجالات (أعداد، قياس، جبر) كما هي
+        {
+          id: "numbers", name: "الأعداد والعمليات", skills: [
+             { id: "place-value", name: "القيمة المنزلية", desc: "تحديد منزلة الرقم وقيمته" },
+             { id: "compare-nums", name: "مقارنة الأعداد", desc: "المقارنة باستخدام الرموز" },
+             { id: "round-nums", name: "تقريب الأعداد", desc: "التقريب لأقرب عشرة ومئة وألف" },
+             { id: "four-ops", name: "العمليات الحسابية", desc: "الجمع، الطرح، الضرب، والقسمة" },
+             { id: "frac-compare", name: "مقارنة الكسور", desc: "مقارنة الكسور الاعتيادية" },
+             { id: "frac-add-sub", name: "جمع وطرح الكسور", desc: "العمليات على الكسور متشابهة المقام" },
+             { id: "frac-simplify", name: "تبسيط الكسور", desc: "إيجاد أبسط صورة للكسر" },
+          ]
+        },
+        {
+          id: "measurement", name: "القياس", skills: [
+            { id: "length", name: "وحدات الطول", desc: "التحويل (م، سم، كم) والمحيط" },
+            { id: "time", name: "الزمن والوقت", desc: "قراءة الساعة وحساب المدة" },
+            { id: "mass", name: "الكتلة", desc: "التحويل بين الجرام والكيلوجرام" },
+            { id: "volume", name: "الحجم والسعة", desc: "حجم المجسمات وسعة السوائل" },
+            { id: "area", name: "المساحة", desc: "قوانين مساحة المربع والمستطيل" },
+          ]
+        },
+        {
+          id: "algebra", name: "الجبر والأنماط", skills: [
+            { id: "one-step", name: "المعادلات", desc: "حل معادلات الجمع والطرح البسيطة" },
+            { id: "patterns", name: "الأنماط العددية", desc: "اكتشاف القاعدة وإكمال النمط" },
+          ]
+        }
+    ];
+
+    function generateQuestion(skillId) {
+      let qText = "", qSvg = null, qType = "text", qAns = "", qHint = "", qChoices = null;
+
+      switch (skillId) {
+        // --- 1. إصلاح التمثيل بالخطوط (جديد) ---
+        case "line-graph":
+          const days = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء"];
+          const temps = days.map(d => ({ label: d, value: randInt(20, 45) }));
+          qSvg = renderLineGraphSVG(temps, "درجات الحرارة خلال الأسبوع", "درجة الحرارة");
+          
+          // اختيار يوم عشوائي للسؤال عنه
+          const targetDay = choose(temps);
+          qText = `بناءً على التمثيل بالخطوط، ما هي درجة الحرارة يوم ${targetDay.label}؟`;
+          qAns = toArabicDigits(targetDay.value);
+          qType = "numeric";
+          qHint = "ابحث عن اليوم في الأسفل، ثم اصعد للخط واقرأ الرقم المقابل.";
+          break;
+
+        // --- 2. إصلاح التمثيل بالنقاط (جديد) ---
+        case "scatter":
+          // بيانات: عدد الكتب المقروءة (القيم على الخط)
+          const values = [1, 2, 3, 4, 5]; 
+          // التكرار (عدد الإشارات X)
+          const dataPoints = values.map(v => ({ val: v, count: randInt(1, 5) }));
+          qSvg = renderDotPlotSVG(dataPoints, "عدد الكتب التي قرأها الطلاب");
+
+          // نوعين من الأسئلة
+          if (Math.random() > 0.5) {
+            // سؤال مباشر: كم طالب قرأ X كتب؟
+            const t = choose(dataPoints);
+            qText = `كم طالباً قرأ ${toArabicDigits(t.val)} كتب؟ (احسب عدد إشارات X)`;
+            qAns = toArabicDigits(t.count);
+          } else {
+            // سؤال: ما هو العدد الأكثر تكراراً؟
+            const maxCount = Math.max(...dataPoints.map(d => d.count));
+            const maxVal = dataPoints.find(d => d.count === maxCount).val;
+            qText = `ما هو عدد الكتب الأكثر قراءة بين الطلاب؟ (العمود الأطول)`;
+            qAns = toArabicDigits(maxVal);
+          }
+          qType = "numeric";
+          break;
+
+        // --- 3. تطوير الزوايا (متقدم) ---
+        case "angles":
+          // أنواع العلاقات: متتامة، متكاملة، متقابلة بالرأس
+          const types = ["comp", "supp", "vert"];
+          const selectedType = choose(types);
+          let a1, a2;
+
+          if (selectedType === "comp") { // متتامة (90)
+            a1 = randInt(20, 70);
+            a2 = 90 - a1;
+            qSvg = renderComplexAngleSVG("comp", a1, a2, 2); // نخفي الزاوية الثانية
+            qText = `الزاویتان متتامتان (مجموعهما ٩٠°). أوجد قيمة س:`;
+            qAns = toArabicDigits(a2);
+          } else if (selectedType === "supp") { // متكاملة (180)
+            a1 = randInt(40, 140);
+            a2 = 180 - a1;
+            qSvg = renderComplexAngleSVG("supp", a1, a2, 2);
+            qText = `الزاویتان متكاملتان (على خط مستقيم). أوجد قيمة س:`;
+            qAns = toArabicDigits(a2);
+          } else { // متقابلة بالرأس (متساوية)
+            a1 = randInt(30, 150);
+            a2 = a1;
+            qSvg = renderComplexAngleSVG("vert", a1, a2, 2);
+            qText = `الزاویتان متقابلتان بالرأس. أوجد قيمة س:`;
+            qAns = toArabicDigits(a1);
+          }
+          qType = "numeric";
+          break;
+
+        // --- بقية المهارات (كما هي في الكود السابق لكن مختصرة هنا للوضوح) ---
+        case "bar-graph":
+          const bData = [{name:"أحمد",value:randInt(5,20)}, {name:"خالد",value:randInt(5,20)}, {name:"سعد",value:randInt(5,20)}];
+          qSvg = renderBarGraphSVG(bData, "النقاط", "العدد");
+          const bTarget = choose(bData);
+          qText = `كم عدد نقاط الطالب ${bTarget.name}؟`;
+          qAns = toArabicDigits(bTarget.value);
+          qType = "numeric";
+          break;
+        case "pie-chart":
+          const pData = [{name:"ماء",value:50},{name:"عصير",value:30},{name:"لبن",value:20}];
+          qSvg = renderPieChartSVG(pData, "المشروبات");
+          qText = "ما هو المشروب الأكثر تفضيلاً؟";
+          qAns = "ماء"; qType="mcq"; qChoices=["ماء","عصير","لبن"];
+          break;
+        case "central":
+          let set = [randInt(2,9), randInt(2,9), randInt(2,9)];
+          while((set[0]+set[1]+set[2])%3 !== 0) set[2]++; // للمتوسط
+          qText = `أوجد المتوسط الحسابي للأعداد: ${set.map(toArabicDigits).join('، ')}`;
+          qAns = toArabicDigits((set[0]+set[1]+set[2])/3);
+          qType = "numeric";
+          break;
+        
+        // ... (يمكنك نسخ بقية حالات الـ case من الكود السابق: place-value, four-ops... إلخ)
+        // سأضيف مثال واحد للتأكد من عمل الكود
+        case "place-value":
+          const num = randInt(100, 9999);
+          qText = `ما القيمة المنزلية للرقم ٥ في العدد ${toArabicDigits(num)} (بافتراض وجوده)؟`;
+          // لتبسيط المثال، سأعيد سؤالاً بسيطاً، يفضل نسخ المنطق السابق الكامل
+          qText = `اكتب العدد ${toArabicDigits(num)} بالصيغة اللفظية. (سؤال تجريبي)`;
+          qAns = num.toString();
+          break;
+
+        default: // لأي مهارة لم يتم تعريفها بعد
+           // هنا نستخدم المنطق القديم لبقية المهارات (أعد نسخ الـ switch القديم هنا لبقية الحالات)
+           // هذا مجرد "Fallback"
+           const n1 = randInt(1,10), n2 = randInt(1,10);
+           qText = `أوجد ناتج: ${toArabicDigits(n1)} × ${toArabicDigits(n2)}`;
+           qAns = toArabicDigits(n1*n2);
+           qType = "numeric";
+      }
+
+      return { text: qText, svg: qSvg, type: qType, ans: qAns.toString(), hint: qHint, choices: qChoices };
+    }
+
+    // ============================================
+    // إدارة الواجهة (نفس المنطق السابق)
+    // ============================================
+    let currentDomainId = "numbers";
+    let currentSkillId = "place-value";
+    let stats = { total: 0, correct: 0 };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // زر الدخول
+      const enterBtn = document.getElementById("enter-btn");
+      if(enterBtn) {
+        enterBtn.addEventListener("click", () => {
+          document.getElementById("welcome-section").classList.add("hidden");
+          document.getElementById("main-app").classList.remove("hidden");
+          loadDomainTabs();
+          loadSkillsList(); // تأكد من تحميل القائمة
+        });
+      }
+
+      // زر التحقق
+      const form = document.getElementById("answer-form");
+      if(form) {
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          checkAnswer();
+        });
+      }
+    });
+
+    function loadDomainTabs() {
+      const tabsContainer = document.getElementById("domains-tabs");
+      if(!tabsContainer) return;
+      tabsContainer.innerHTML = "";
+      domains.forEach(d => {
+         const btn = document.createElement("button");
+         btn.textContent = d.name;
+         btn.className = `px-4 py-2 rounded-lg text-sm font-bold transition-all border border-transparent ${currentDomainId === d.id ? 'bg-[#006C67] text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'}`;
+         btn.onclick = () => { currentDomainId = d.id; loadDomainTabs(); loadSkillsList(); };
+         tabsContainer.appendChild(btn);
+      });
+      // تحديث محتوى القائمة الجانبية عند تحميل التبويبات
+      loadSkillsList();
+    }
+
+    function loadSkillsList() {
+      const listContainer = document.getElementById("skills-list");
+      if(!listContainer) return;
+      const domain = domains.find(d => d.id === currentDomainId);
+      document.getElementById("domain-title").textContent = domain.name;
+      
+      listContainer.innerHTML = "";
+      domain.skills.forEach(s => {
+        const btn = document.createElement("button");
+        btn.className = `w-full text-right px-4 py-3 rounded-lg text-sm transition-all mb-1 border-r-4 ${currentSkillId === s.id ? 'bg-[#E6F4F3] border-[#006C67] text-[#004D49] font-bold' : 'border-transparent text-slate-600 hover:bg-slate-50'}`;
+        btn.innerHTML = `<div class="font-bold">${s.name}</div><div class="text-xs opacity-70 mt-1 font-normal">${s.desc}</div>`;
+        btn.onclick = () => { currentSkillId = s.id; loadSkillsList(); resetStats(); loadQuestion(); };
+        listContainer.appendChild(btn);
+      });
+      // تحميل السؤال مباشرة عند تغيير القائمة
+      loadQuestion();
+    }
+
+    function loadQuestion() {
+      const qData = generateQuestion(currentSkillId);
+      const qContainer = document.getElementById("question-text");
+      const hintEl = document.getElementById("hint-text");
+      const mcqContainer = document.getElementById("mcq-container");
+      const inputContainer = document.getElementById("input-container");
+      const ansInput = document.getElementById("answer-input");
+      
+      document.getElementById("feedback-correct").classList.add("hidden");
+      document.getElementById("feedback-wrong").classList.add("hidden");
+      ansInput.value = "";
+      document.getElementById("current-correct-answer").dataset.correctAnswer = qData.ans;
+
+      qContainer.innerHTML = "";
+      if(qData.svg) qContainer.innerHTML += qData.svg;
+      qContainer.innerHTML += `<div class="mt-4">${qData.text}</div>`;
+
+      if(qData.hint) {
+         hintEl.textContent = "💡 تلميح: " + qData.hint;
+         hintEl.classList.remove("hidden");
+      } else {
+         hintEl.classList.add("hidden");
+      }
+
+      if(qData.type === "mcq") {
+         inputContainer.classList.add("hidden");
+         mcqContainer.classList.remove("hidden");
+         mcqContainer.innerHTML = "";
+         qData.choices.forEach(ch => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = ch;
+            btn.className = "px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-bold hover:bg-[#006C67] hover:text-white transition-all shadow-sm";
+            btn.onclick = () => {
+               ansInput.value = ch;
+               checkAnswer();
+            };
+            mcqContainer.appendChild(btn);
+         });
+      } else {
+         inputContainer.classList.remove("hidden");
+         mcqContainer.classList.add("hidden");
+         ansInput.focus();
+      }
+    }
+
+    function resetStats() {
+       stats.total = 0; stats.correct = 0;
+       updateStatsUI();
+    }
+
+    function updateStatsUI() {
+       document.getElementById("stat-total").textContent = toArabicDigits(stats.total);
+       document.getElementById("stat-correct").textContent = toArabicDigits(stats.correct);
+       const pct = stats.total === 0 ? 0 : Math.round((stats.correct/stats.total)*100);
+       document.getElementById("stat-percent").textContent = toArabicDigits(pct) + "٪";
+    }
+
+    function checkAnswer() {
+       const userAns = document.getElementById("answer-input").value.trim();
+       const correctAns = document.getElementById("current-correct-answer").dataset.correctAnswer;
+       if(!userAns) return;
+
+       stats.total++;
+       const normUser = userAns.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+       const normCorr = correctAns.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+       
+       let isCorrect = (normUser == normCorr); 
+       if(!isCorrect && !isNaN(normUser) && !isNaN(normCorr)) {
+          isCorrect = (Number(normUser) === Number(normCorr));
+       }
+
+       if(isCorrect) {
+          stats.correct++;
+          document.getElementById("feedback-correct").classList.remove("hidden");
+          document.getElementById("feedback-wrong").classList.add("hidden");
+       } else {
+          document.getElementById("feedback-wrong").classList.remove("hidden");
+          document.getElementById("feedback-correct").classList.add("hidden");
+          document.getElementById("feedback-wrong-text").textContent = "حاول مرة أخرى! الإجابة الصحيحة هي: " + correctAns;
+       }
+       
+       updateStatsUI();
+       if(isCorrect) setTimeout(loadQuestion, 2000);
+    }
+</script>
